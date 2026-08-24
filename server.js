@@ -31,26 +31,97 @@ app.post('/api/pasarela/crud', async (req, res) => {
         // =====================================================================
         switch (lcAccionLimpia) {
 
-            // 👉 CASO 1: ESTRUCTURA PARA EL CREATE CURSOR DE TU CLASE EN FOXPRO
+            // =====================================================================
+            // 👉 CASO 1: TRADUCTOR DINÁMICO DE ESTRUCTURAS POSTGRES A VISUAL FOXPRO
+            // =====================================================================
             case 'estructura':
-                // PostgREST exige limit=0 y el conteo exacto para escupir solo el esqueleto de columnas
-                const resEst = await fetch(`${urlBaseTabla}?limit=0`, {
+                console.log(`🔍 Generando diccionario de campos FoxPro para la tabla: ${lcTablaLimpia}`);
+
+                // Interrogamos al diccionario de columnas nativo de PostgreSQL en Supabase
+                const urlDiccionario = `${SUPABASE_BASE.trim().replace('/rest/v1', '/rest/v1/rpc/get_tabla_estructura_vfp')}`;
+                
+                // Formateamos la consulta directa a las vistas del sistema de Postgres vía RPC o filtro
+                // Para no complicarte con más funciones RPC, le pegamos directo a la API de consulta de catálogos:
+                const urlCatalogo = `${SUPABASE_BASE.trim().replace('/rest/v1', '')}/rest/v1/#` ; 
+                
+                // Jugada maestra: Usamos una consulta limpia al information_schema de Postgres
+                // Le pedimos a Supabase los nombres de columnas y sus tipos de datos para la tabla recibida
+                const urlCampos = `${SUPABASE_BASE.trim().split('.supabase.co')[0]}.supabase.co/rest/v1/rpc/get_columnas`;
+                
+                // Para hacerlo inexpugnable, rápido y sin deudas de RPCs adicionales en Supabase,
+                // usamos la URL base para consultar las columnas filtrando de forma directa por la tabla:
+                const urlColumnsSchema = `${SUPABASE_BASE.trim().replace('/rest/v1', '')}/rest/v1/rpc/execute_sql`;
+                
+                // Método estándar de PostgREST para leer meta-data limpia sin registros:
+                // Le pedimos un GET a la tabla con la cabecera HTTP de formato OpenAPI que nos da el esqueleto puro
+                const resSchema = await fetch(`${SUPABASE_BASE.trim()}/${lcTablaLimpia}?limit=0`, {
                     method: 'GET',
                     headers: {
                         'apikey': SUPABASE_KEY,
                         'Authorization': "Bearer " + SUPABASE_KEY,
-                        'Prefer': 'count=exact'
+                        'Accept': 'application/openapi+json' // Le exige a Supabase que devuelva la definición técnica de la tabla
                     }
                 });
-                
-                if (!resEst.ok) throw new Error("no se pudo leer la tabla en supabase.");
-                
-                // Mapeamos los campos del JSON y construimos la cadena nativa de FoxPro
-                const dataEst = await resEst.json();
-                // Si la tabla está en limpio, devolvemos un mapeo base estándar compatible con tu clase
-                return res.status(200).send("cedula C(15), nombre C(50), telefono C(20), direccion C(100)");
 
-            // 👉 CASO 2: BUSCAR REGISTRO POR CÉDULA/NÚMERO INDEXADO POR EMPRESA
+                if (!resSchema.ok) {
+                    return res.status(400).json({ exito: false, error: `la tabla ${lcTablaLimpia} no existe en supabase.` });
+                }
+
+                const schemaData = await resSchema.json();
+                const propiedades = schemaData.paths[`/${lcTablaLimpia}`].get.parameters;
+                
+                let stringFoxPro = "";
+
+                // Barremos las columnas reales que tiene la tabla en la nube en este microsegundo
+                propiedades.forEach((param) => {
+                    if (param.in === 'query' && !param.name.includes('.')) {
+                        const nombreCampo = param.name.toLowerCase().trim();
+                        const tipoPostgres = param.type || 'string';
+                        const formatoPostgres = param.format || '';
+                        
+                        let tipoFoxPro = "C(250)"; // Tipo por defecto para resguardar texto
+
+                        // =============================================================
+                        // TRADUCTOR DE TIPOS DE HARDWARE: POSTGRES -> VFP
+                        // =============================================================
+                        switch (tipoPostgres) {
+                            case 'integer':
+                                tipoFoxPro = "I";
+                                break;
+                            case 'boolean':
+                                tipoFoxPro = "L";
+                                break;
+                            case 'number':
+                                // Si viene de un numeric(12,2) contable o alícuota
+                                tipoFoxPro = "N(12,2)";
+                                break;
+                            case 'string':
+                                if (formatoPostgres === 'date' || nombreCampo === 'fecha' || nombreCampo.includes('fecha')) {
+                                    tipoFoxPro = "D";
+                                } else if (nombreCampo === 'id' || nombreCampo === 'id_interno') {
+                                    tipoFoxPro = "I"; // Mapeamos los IDs autoincrementales como Enteros
+                                } else if (nombreCampo === 'id_producto' || nombreCampo === 'id_empresa') {
+                                    tipoFoxPro = "C(15)";
+                                } else if (nombreCampo === 'factura' || nombreCampo === 'control') {
+                                    tipoFoxPro = "C(20)";
+                                } else if (nombreCampo === 'cedula') {
+                                    tipoFoxPro = "C(15)";
+                                } else {
+                                    tipoFoxPro = "C(250)";
+                                }
+                                break;
+                        }
+
+                        // Concatenamos el campo en el string con el formato rígido de FoxPro
+                        if (stringFoxPro !== "") stringFoxPro += ", ";
+                        stringFoxPro += `${nombreCampo} ${tipoFoxPro}`;
+                    }
+                });
+
+                console.log(`🎯 Estructura mapeada para FoxPro: ${stringFoxPro}`);
+                // Le devolvemos el string puro que tu comando & dinámico en VFP necesita para el CREATE CURSOR
+                return res.status(200).send(stringFoxPro);
+
             case 'buscar':
                 if (!clave || !id_empresa) {
                     return res.status(400).json({ encontrado: false, error: "falta la clave o el id_empresa." });
