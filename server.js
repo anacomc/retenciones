@@ -165,6 +165,14 @@ app.post('/api/pasarela/crud', async (req, res) => {
                         return res.status(200).send(lcCamposFinales);
                     } else {
                         // Paracaídas de respaldo automatizado si no has sembrado el RPC todavía
+                      return res.status(400).json({ 
+                      exito: false, error: "falta sembrar la funcion de lectura de catalogo en Supabase." });
+                      }} 
+                    catch (errInner) {
+                    console.error("Error interno en estructura dinámica:", errInner.message);
+                    return res.status(500).json({ 
+                    exito: false, error: errInner.message });
+                    }
 
 
 
