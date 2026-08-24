@@ -32,95 +32,42 @@ app.post('/api/pasarela/crud', async (req, res) => {
         switch (lcAccionLimpia) {
 
             // =====================================================================
-            // 👉 CASO 1: TRADUCTOR DINÁMICO DE ESTRUCTURAS POSTGRES A VISUAL FOXPRO
+            // 👉 CASO 1: DICCIONARIO DINÁMICO DE HARDWARE PARA VISUAL FOXPRO
             // =====================================================================
             case 'estructura':
-                console.log(`🔍 Generando diccionario de campos FoxPro para la tabla: ${lcTablaLimpia}`);
+                console.log(`🔍 Desplegando estructura local fija para la tabla: ${lcTablaLimpia}`);
 
-                try {
-                    // REMACHE MAESTRO: Le pegamos a la raíz pura de la API REST para jalar el esquema OpenAPI global
-                    const resSchema = await fetch(`${SUPABASE_BASE.trim()}/`, {
-                        method: 'GET',
-                        headers: {
-                            'apikey': SUPABASE_KEY,
-                            'Authorization': "Bearer " + SUPABASE_KEY,
-                            'Accept': 'application/openapi+json' // Exigimos la radiografía estructural de todo el proyecto
-                        }
-                    });
+                let stringFoxPro = "";
 
-                    if (!resSchema.ok) {
-                        const txtErrS = await resSchema.text();
-                        console.error("Fallo al leer especificaciones de Supabase:", txtErrS);
-                        return res.status(400).json({ exito: false, error: "no se pudo leer el esquema de la base de datos." });
-                    }
+                // =============================================================
+                // MAPEO EXACTO EN MINÚSCULAS DE TUS COLUMNAS REALES DE SUPABASE
+                // =============================================================
+                switch (lcTablaLimpia) {
+                    case 'empresas':
+                        stringFoxPro = "id_empresa C(15), rif C(15), razon_social C(250), cupos_licencias I, status L";
+                        break;
 
-                    const schemaData = await resSchema.json();
-                    
-                    // Validamos dinámicamente si la ruta de la tabla existe en las definiciones del búnker
-                    const rutaTabla = `/${lcTablaLimpia}`;
-                    if (!schemaData.paths || !schemaData.paths[rutaTabla]) {
-                        console.error(`La tabla ${lcTablaLimpia} no se localizó en las rutas de PostgREST.`);
-                        return res.status(400).json({ exito: false, error: `la tabla ${lcTablaLimpia} no existe o no tiene permisos en supabase.` });
-                    }
+                    case 'clientes':
+                        stringFoxPro = "id I, id_empresa C(15), cedula C(15), nombre C(250), telefono C(20), direccion C(250)";
+                        break;
 
-                    // Extraemos los parámetros de las columnas de la definición de filtrado GET
-                    const propiedades = schemaData.paths[rutaTabla].get.parameters;
-                    let stringFoxPro = "";
+                    case 'retmaster':
+                        stringFoxPro = "id_empresa C(15), numero C(20), fecha D, rif C(15), cliente C(250), total N(12,2), base N(12,2), iva N(12,2), retenido N(12,2), pagado N(12,2), excento N(12,2), porceret N(6,2), impreso L, elaborado D, status L";
+                        break;
 
-                    // Barremos las columnas reales que tiene la tabla en la nube en este microsegundo
-                    propiedades.forEach((param) => {
-                        // Filtramos solo las propiedades planas de las columnas de la tabla
-                        if (param.in === 'query' && !param.name.includes('.')) {
-                            const nombreCampo = param.name.toLowerCase().trim();
-                            const tipoPostgres = param.type || 'string';
-                            const formatoPostgres = param.format || '';
-                            
-                            let tipoFoxPro = "C(250)"; // Tipo por defecto seguro para resguardar texto
+                    case 'retdal':
+                        stringFoxPro = "id_interno I, id_empresa C(15), numero C(20), id C(2), fechafactu D, comprobant N(12,2), factura C(20), control C(20), notad C(20), notacr C(20), tipo C(2), factuafec C(20), tipodoc C(2), totalciva N(12,2), totalsinde N(12,2), base N(12,2), alicuota N(6,2), iva N(12,2), retenido N(12,2), apagar N(12,2)";
+                        break;
 
-                            // =============================================================
-                            // TRADUCTOR DE TIPOS DE HARDWARE: POSTGRES -> VFP
-                            // =============================================================
-                            switch (tipoPostgres) {
-                                case 'integer':
-                                    tipoFoxPro = "I";
-                                    break;
-                                case 'boolean':
-                                    tipoFoxPro = "L";
-                                    break;
-                                case 'number':
-                                    tipoFoxPro = "N(12,2)"; // Formato idóneo para tus campos monetarios y alícuotas
-                                    break;
-                                case 'string':
-                                    if (formatoPostgres === 'date' || nombreCampo === 'fecha' || nombreCampo.includes('fecha') || nombreCampo.includes('elaborado')) {
-                                        tipoFoxPro = "D";
-                                    } else if (nombreCampo === 'id' || nombreCampo === 'id_interno') {
-                                        tipoFoxPro = "I"; // Mapeamos los IDs autoincrementales como Enteros locales
-                                    } else if (nombreCampo === 'id_producto' || nombreCampo === 'id_empresa') {
-                                        tipoFoxPro = "C(15)";
-                                    } else if (nombreCampo === 'factura' || nombreCampo === 'control' || nombreCampo === 'numero') {
-                                        tipoFoxPro = "C(20)";
-                                    } else if (nombreCampo === 'cedula' || nombreCampo === 'rif') {
-                                        tipoFoxPro = "C(15)";
-                                    } else {
-                                        tipoFoxPro = "C(250)";
-                                    }
-                                    break;
-                            }
-
-                            // Concatenamos el campo en el string con el formato rígido de FoxPro
-                            if (stringFoxPro !== "") stringFoxPro += ", ";
-                            stringFoxPro += `${nombreCampo} ${tipoFoxPro}`;
-                        }
-                    });
-
-                    console.log(`🎯 Estructura unificada y mapeada para FoxPro: ${stringFoxPro}`);
-                    // Le devolvemos el string puro que tu comando & dinámico en VFP necesita para el CREATE CURSOR
-                    return res.status(200).send(stringFoxPro);
-
-                } catch (errInner) {
-                    console.error("Error interno procesando esquema OpenAPI:", errInner.message);
-                    return res.status(500).json({ exito: false, error: errInner.message });
+                    default:
+                        console.error(`La tabla ${lcTablaLimpia} no está registrada en el diccionario de la pasarela.`);
+                        return res.status(400).json({ exito: false, error: `la tabla ${lcTablaLimpia} no esta mapeada en el servidor.` });
                 }
+
+                console.log(`🎯 Estructura despachada con éxito para FoxPro: ${stringFoxPro}`);
+                // Le devolvemos el string puro que tu comando & dinámico en VFP necesita para el CREATE CURSOR
+                return res.status(200).send(stringFoxPro);
+
 
 
             case 'buscar':
