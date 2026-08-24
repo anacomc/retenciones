@@ -279,67 +279,101 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     exito: true, 
                     numero_control: dataRpc.numero_control 
                 });
-            // 👉 CASO 6: GUARDADO AUTÓNOMO DE EMPRESAS CON CONTROL DE CUPOS (POST)
+            // =====================================================================
+            // 👉 CASO 5: GUARDADO AUTÓNOMO DE EMPRESAS CON CONTROL DE CUPOS (POST)
+            // =====================================================================
             case 'guardar_empresa':
-                if (!datos || !datos.id_matriz) {
+                if (!datos || !datos.id_matriz || !datos.id_empresa) {
                     return res.status(400).json({ exito: false, error: "Estructura de licenciamiento incompleta." });
                 }
 
-                // 1. Buscamos el registro Máster de la licencia para saber cuántos cupos pagó este cliente
-                const resLicencia = await fetch(`${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${datos.id_matriz}`, {
-                    method: 'GET',
-                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
-                });
-                const dataLicencia = await resLicencia.json();
+                try {
+                    const lcIdMatriz = datos.id_matriz.trim().toLowerCase();
+                    const lcIdEmpresa = datos.id_empresa.trim().toLowerCase();
 
-                if (!dataLicencia || dataLicencia.length === 0) {
-                    return res.status(400).json({ exito: false, error: "Licencia matriz no localizada en el búnker." });
-                }
-
-                const maxCupos = dataLicencia[0].cupos_licencias;
-
-                // 2. Contamos cuántas empresas ha creado este cliente en la nube actualmente
-                const resConteo = await fetch(`${SUPABASE_BASE.trim()}/empresas?id_matriz=eq.${datos.id_matriz}&select=id_empresa`, {
-                    method: 'GET',
-                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY, 'Prefer': 'count=exact' }
-                });
-                
-                // PostgREST nos devuelve el conteo real en las cabeceras HTTP (content-range)
-                const rangoHeader = resConteo.headers.get('content-range');
-                const totalCreadas = rangoHeader ? parseInt(rangoHeader.split('/')[1]) : 0;
-
-                // 3. LA VALIDACIÓN DE HARDWARE:
-                // Si es una modificación (el id_empresa ya existe), dejamos pasar libremente.
-                // Si es una NUEVA empresa y ya llegó al límite, bloqueamos la cañería en el acto.
-                const resExiste = await fetch(`${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${datos.id_empresa}`, {
-                    method: 'GET',
-                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
-                });
-                const dataExiste = await resExiste.json();
-                const esNueva = (dataExiste.length === 0);
-
-                if (esNueva && totalCreadas >= maxCupos) {
-                    return res.status(200).json({ 
-                        exito: false, 
-                        bloqueado: true, 
-                        error: `Ha alcanzado el límite máximo de (${maxCupos}) empresas permitidas en su plan contable contratado.` 
+                    // 1. Buscamos el registro Máster de la licencia para saber cuántos cupos pagó este cliente
+                    const urlLicencia = `${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${lcIdMatriz}`;
+                    const resLicencia = await fetch(urlLicencia, {
+                        method: 'GET',
+                        headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
                     });
+                    const dataLicencia = await resLicencia.json();
+
+                    if (!dataLicencia || dataLicencia.length === 0) {
+                        return res.status(400).json({ exito: false, error: "Licencia matriz no localizada en el búnker." });
+                    }
+
+                    const maxCupos = parseInt(dataLicencia[0].cupos_licencias || 1);
+
+                    // 2. Contamos cuántas empresas ha creado este cliente en la nube actualmente
+                    const urlConteo = `${SUPABASE_BASE.trim()}/empresas?id_matriz=eq.${lcIdMatriz}&select=id_empresa`;
+                    const resConteo = await fetch(urlConteo, {
+                        method: 'GET',
+                        headers: { 
+                            'apikey': SUPABASE_KEY, 
+                            'Authorization': "Bearer " + SUPABASE_KEY,
+                            'Prefer': 'count=exact' // Le exige a Supabase calcular el total por hardware
+                        }
+                    });
+                    
+                    const rangoHeader = resConteo.headers.get('content-range');
+                    let totalCreadas = 0;
+                    if (rangoHeader && rangoHeader.includes('/')) {
+                        totalCreadas = parseInt(rangoHeader.split('/')[1]) || 0;
+                    }
+
+                    // 3. VALIDACIÓN DE HARDWARE: Verificamos si la empresa ya existe
+                    const urlExiste = `${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${lcIdEmpresa}`;
+                    const resExiste = await fetch(urlExiste, {
+                        method: 'GET',
+                        headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
+                    });
+                    const dataExiste = await resExiste.json();
+                    const esNueva = (dataExiste.length === 0);
+
+                    // CONTROL DE CANDADO: Si intenta meter una nueva y ya gastó los cupos, frena el grifo
+                    if (esNueva && totalCreadas >= maxCupos) {
+                        console.log(`⚠️ Bloqueo de cupos para matriz ${lcIdMatriz}. Creadas: ${totalCreadas}, Máximo: ${maxCupos}`);
+                        return res.status(200).json({ 
+                            exito: false, 
+                            bloqueado: true, 
+                            error: `Ha alcanzado el límite máximo de (${maxCupos}) empresas permitidas en su plan contable contratado.` 
+                    });
+                    }
+
+                    // 4. LUZ VERDE: Si tiene cupo o es modificación, procesamos el Upsert dinámico en las celdas web
+                    const urlUpsertEmp = `${SUPABASE_BASE.trim()}/empresas?on_conflict=id_empresa`;
+                    const resUpsertEmp = await fetch(urlUpsertEmp, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_KEY,
+                            'Authorization': "Bearer " + SUPABASE_KEY,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'action=upsert,resolution=merge-duplicates'
+                        },
+                        body: JSON.stringify({
+                            id_empresa: lcIdEmpresa,
+                            id_matriz: lcIdMatriz,
+                            rif: datos.rif ? datos.rif.trim() : "",
+                            razon_social: datos.razon_social ? datos.razon_social.trim() : "",
+                            cupos_licencias: esNueva ? 1 : (dataExiste[0].cupos_licencias || 1), // Protegemos que el cliente no se auto-asigne cupos infinitos
+                            status: datos.status !== undefined ? datos.status : true
+                        })
+                    });
+
+                    if (!resUpsertEmp.ok) {
+                        const txtErrU = await resUpsertEmp.text();
+                        console.error("Error asentando empresa en Supabase:", txtErrU);
+                        return res.status(400).json({ exito: false, error: "Error al asentar la empresa en la base de datos." });
+                    }
+
+                    console.log(`✅ Empresa ${lcIdEmpresa} asentada con éxito de forma autónoma. Matriz: ${lcIdMatriz}`);
+                    return res.status(200).json({ exito: true });
+
+                } catch (errEmpresa) {
+                    console.error("❌ Fallo crítico en compuerta de guardar_empresa:", errEmpresa.message);
+                    return res.status(500).json({ exito: false, error: errEmpresa.message });
                 }
-
-                // 4. LUZ VERDE: Si tiene cupo disponible o es una modificación, procesamos el Upsert en la nube
-                const resUpsertEmp = await fetch(`${SUPABASE_BASE.trim()}/empresas?on_conflict=id_empresa`, {
-                    method: 'POST',
-                    headers: {
-                        'apikey': SUPABASE_KEY,
-                        'Authorization': "Bearer " + SUPABASE_KEY,
-                        'Content-Type': 'application/json',
-                        'Prefer': 'action=upsert,resolution=merge-duplicates'
-                    },
-                    body: JSON.stringify(datos)
-                });
-
-                if (!resUpsertEmp.ok) return res.status(400).json({ exito: false, error: "Error al asentar la empresa en Supabase." });
-                return res.status(200).json({ exito: true });
                 
         }
 
