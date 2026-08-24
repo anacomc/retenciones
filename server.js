@@ -124,6 +124,38 @@ app.post('/api/pasarela/crud', async (req, res) => {
 
             default:
                 return res.status(400).json({ exito: false, error: "accion no reconocida en la pasarela." });
+                
+            // 👉 CASO 4: PROCESAR RETENCIÓN MAESTRO/DETALLE SIN SALTOS (POST)
+            // Cambiado dinámicamente de 'facturar' a 'retencion' a tu manera
+            case 'retencion':
+                if (!datos) return res.status(400).json({ exito: false, error: "falta la estructura del comprobante." });
+
+                // Modificamos la URL base para apuntar al endpoint RPC nativo de tu función en Supabase
+                const urlRpcRetencion = SUPABASE_BASE.trim().replace('/rest/v1', '/rpc/procesar_comprobante_retencion');
+                console.log("⚡ pasarela ejecutando transaccion rpc en: " + urlRpcRetencion);
+
+                const resRpc = await fetch(urlRpcRetencion, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': "Bearer " + SUPABASE_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(datos) // Le inyectamos los datos del maestro y su arreglo 'p_items'
+                });
+
+                const dataRpc = await resRpc.json();
+
+                if (!resRpc.ok || dataRpc.exito === false) {
+                    console.error("error en la transaccion rpc:", dataRpc.error || "falla de hardware");
+                    return res.status(400).json({ exito: false, error: dataRpc.error || "bloqueo de integridad fiscal." });
+                }
+
+                // Devolvemos el número de control definitivo (año+mes+secuencia) generado por Postgres
+                return res.status(200).json({ 
+                    exito: true, 
+                    numero_control: dataRpc.numero_control 
+                });
         }
 
     } catch (error) {
