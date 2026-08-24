@@ -30,7 +30,6 @@ app.post('/api/pasarela/crud', async (req, res) => {
         // COMPUERTA DE TRÁFICO (DO CASE CONTROLADO EN MINÚSCULAS)
         // =====================================================================
         switch (lcAccionLimpia) {
-
             // =====================================================================
             // 👉 CASO 1: TRADUCTOR DINÁMICO E INDESTRUCTIBLE DE ESTRUCTURAS (POST)
             // =====================================================================
@@ -66,7 +65,6 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     // Para no obligarte a sembrar funciones en Supabase, le consultamos de forma directa 
                     // a la tabla de catálogos que PostgREST siempre mantiene abierta:
                     const urlDirectaCatalogo = `${SUPABASE_BASE.trim()}/../rest/v1/rpc/execute`;
-
                     // =====================================================================
                     // REMACHE MAESTRO UNIVERSAL: Consultamos la meta-data de columnas por PostgREST
                     // =====================================================================
@@ -173,10 +171,9 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     return res.status(500).json({ 
                     exito: false, error: errInner.message });
                     }
-
-
-
-
+            // =====================================================================
+            // 👉 CASO 2: BUSCAR
+            // =====================================================================
             case 'buscar':
                 if (!clave || !id_empresa) {
                     return res.status(400).json({ encontrado: false, error: "falta la clave o el id_empresa." });
@@ -251,7 +248,7 @@ app.post('/api/pasarela/crud', async (req, res) => {
             default:
                 return res.status(400).json({ exito: false, error: "accion no reconocida en la pasarela." });
                 
-            // 👉 CASO 4: PROCESAR RETENCIÓN MAESTRO/DETALLE SIN SALTOS (POST)
+            // 👉 CASO 5: PROCESAR RETENCIÓN MAESTRO/DETALLE SIN SALTOS (POST)
             // Cambiado dinámicamente de 'facturar' a 'retencion' a tu manera
             case 'retencion':
                 if (!datos) return res.status(400).json({ exito: false, error: "falta la estructura del comprobante." });
@@ -282,6 +279,68 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     exito: true, 
                     numero_control: dataRpc.numero_control 
                 });
+            // 👉 CASO 6: GUARDADO AUTÓNOMO DE EMPRESAS CON CONTROL DE CUPOS (POST)
+            case 'guardar_empresa':
+                if (!datos || !datos.id_matriz) {
+                    return res.status(400).json({ exito: false, error: "Estructura de licenciamiento incompleta." });
+                }
+
+                // 1. Buscamos el registro Máster de la licencia para saber cuántos cupos pagó este cliente
+                const resLicencia = await fetch(`${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${datos.id_matriz}`, {
+                    method: 'GET',
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
+                });
+                const dataLicencia = await resLicencia.json();
+
+                if (!dataLicencia || dataLicencia.length === 0) {
+                    return res.status(400).json({ exito: false, error: "Licencia matriz no localizada en el búnker." });
+                }
+
+                const maxCupos = dataLicencia[0].cupos_licencias;
+
+                // 2. Contamos cuántas empresas ha creado este cliente en la nube actualmente
+                const resConteo = await fetch(`${SUPABASE_BASE.trim()}/empresas?id_matriz=eq.${datos.id_matriz}&select=id_empresa`, {
+                    method: 'GET',
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY, 'Prefer': 'count=exact' }
+                });
+                
+                // PostgREST nos devuelve el conteo real en las cabeceras HTTP (content-range)
+                const rangoHeader = resConteo.headers.get('content-range');
+                const totalCreadas = rangoHeader ? parseInt(rangoHeader.split('/')[1]) : 0;
+
+                // 3. LA VALIDACIÓN DE HARDWARE:
+                // Si es una modificación (el id_empresa ya existe), dejamos pasar libremente.
+                // Si es una NUEVA empresa y ya llegó al límite, bloqueamos la cañería en el acto.
+                const resExiste = await fetch(`${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${datos.id_empresa}`, {
+                    method: 'GET',
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
+                });
+                const dataExiste = await resExiste.json();
+                const esNueva = (dataExiste.length === 0);
+
+                if (esNueva && totalCreadas >= maxCupos) {
+                    return res.status(200).json({ 
+                        exito: false, 
+                        bloqueado: true, 
+                        error: `Ha alcanzado el límite máximo de (${maxCupos}) empresas permitidas en su plan contable contratado.` 
+                    });
+                }
+
+                // 4. LUZ VERDE: Si tiene cupo disponible o es una modificación, procesamos el Upsert en la nube
+                const resUpsertEmp = await fetch(`${SUPABASE_BASE.trim()}/empresas?on_conflict=id_empresa`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': "Bearer " + SUPABASE_KEY,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'action=upsert,resolution=merge-duplicates'
+                    },
+                    body: JSON.stringify(datos)
+                });
+
+                if (!resUpsertEmp.ok) return res.status(400).json({ exito: false, error: "Error al asentar la empresa en Supabase." });
+                return res.status(200).json({ exito: true });
+                
         }
 
     } catch (error) {
