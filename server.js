@@ -34,7 +34,6 @@ app.post('/api/pasarela/crud', async (req, res) => {
             // 👉 CASO 1: ESTRUCTURA PARA EL CREATE CURSOR DE TU CLASE EN FOXPRO
             case 'estructura':
                 // PostgREST exige limit=0 y el conteo exacto para escupir solo el esqueleto de columnas
-                console.log("🚀 solicitud de estructura");
                 const resEst = await fetch(`${urlBaseTabla}?limit=0`, {
                     method: 'GET',
                     headers: {
