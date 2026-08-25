@@ -37,140 +37,90 @@ app.post('/api/pasarela/crud', async (req, res) => {
                 console.log(`🔍 Interrogando al diccionario Postgres para la tabla: ${lcTablaLimpia}`);
 
                 try {
-                    // Pegamos directamente al catálogo oficial de columnas de PostgreSQL
-                    const urlSchemaColumns = `${SUPABASE_BASE.trim().replace('/rest/v1', '/rest/v1/rpc/get_tabla_campos_vfp')}`;
+                    // 1. Conexión limpia y directa al RPC que compilaste con Success en Supabase
+                    const urlCatalogSchema = `${SUPABASE_BASE.trim()}/rpc/get_tabla_columnas_vfp`;
                     
-                    // Como PostgREST permite consultar las vistas del sistema de forma nativa:
-                    const urlDiccionarioPostgres = `${SUPABASE_BASE.trim()}/../rpc/execute_sql`; 
-                    
-                    // LA JUGADA MAESTRA: Consultamos la vista estándar de Postgres por vía directa de red
-                    const urlCatalogoReal = `${SUPABASE_BASE.trim()}/../../rest/v1/rpc/get_columns`;
-                    
-                    // Para irnos por la cañería REST limpia sin deudas de seguridad, le consultamos
-                    // directamente al information_schema de Postgres expuesto en tu API:
-                    const urlDiccionarioLimpio = `${SUPABASE_BASE.trim().split('/rest/v1')[0]}/rest/v1/rpc/get_columns`;
-
-                    // Usaremos la vía más segura y elástica: interrogar a la vista de columnas oculta de PostgREST
-                    const resColumnas = await fetch(`${SUPABASE_BASE.trim()}/#`, { method: 'GET', headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY } });
-
-                    // CONFIGURACIÓN DIRECTA DE HARDWARE CONTRA EL DICCIONARIO POSTGRES:
-                    // PostgREST expone de forma nativa la tabla de columnas si le pegamos al endpoint del sistema.
-                    // Para asegurar dinamismo total sin deudas de OpenAPI, hacemos un filtro plano a las vistas:
-                    const urlInformationSchema = `${SUPABASE_BASE.trim().split('/rest/v1')[0]}/rest/v1/rpc/get_columns`;
-                    
-                    // Soplete Definitivo: Interrogamos a la vista de columnas del esquema public vía PostgREST clásico
-                    const urlMetaColumns = `${SUPABASE_BASE.trim().split('/rest/v1')[0]}/rest/v1/` + 
-                        `rpc/get_tabla_campos?p_tabla=${lcTablaLimpia}`;
-
-                    // Para no obligarte a sembrar funciones en Supabase, le consultamos de forma directa 
-                    // a la tabla de catálogos que PostgREST siempre mantiene abierta:
-                    const urlDirectaCatalogo = `${SUPABASE_BASE.trim()}/../rest/v1/rpc/execute`;
-                    // =====================================================================
-                    // REMACHE MAESTRO UNIVERSAL: Consultamos la meta-data de columnas por PostgREST
-                    // =====================================================================
-                    const urlColumnsCatalog = `${SUPABASE_BASE.trim().split('/rest/v1')[0]}/rest/v1/` +
-                        `../rest/v1/rpc/get_columns_vfp?table_name=${lcTablaLimpia}`;
-                    
-                    // La ruta estándar infalible para leer las columnas de una tabla en PostgREST 
-                    // sin deudas de OpenAPI es pedir un bocado de datos limpio de cabeceras de columnas:
-                    const urlEstructuraViva = `${SUPABASE_BASE.trim()}/${lcTablaLimpia}?limit=1`;
-                    
-                    const resRáfaga = await fetch(urlEstructuraViva, {
-                        method: 'GET',
-                        headers: {
-                            'apikey': SUPABASE_KEY,
-                            'Authorization': "Bearer " + SUPABASE_KEY,
-                            // Le pedimos que nos devuelva el formato de la cabecera con el mapa de tipos de datos
-                            'Prefer': 'count=exact'
-                        }
-                    });
-
-                    if (!resRáfaga.ok) {
-                        return res.status(400).json({ exito: false, error: `la tabla ${lcTablaLimpia} no responde en la nube.` });
-                    }
-
-                    // Leemos el bocado de datos (si la tabla está vacía devuelve un arreglo limpio [])
-                    // Pero inspeccionamos las llaves del objeto para saber los nombres de las columnas
-                    const dataRáfaga = await resRáfaga.json();
-                    
-                    // Si la tabla está en limpio y no tiene registros todavía, usamos un truco de hardware:
-                    // Le consultamos al endpoint de RPC que crearemos en Supabase para barrer las columnas reales
-                    const urlCatalogoPostgres = `${SUPABASE_BASE.trim().split('/rest/v1')[0]}/rest/v1/rpc/get_estructura_dinamica`;
-                    
-                    // Para que no dependas de registros sembrados, ejecutamos la consulta al diccionario real:
-                    const resDiccionarioReal = await fetch(`${SUPABASE_BASE.trim().split('/rest/v1')[0]}/rest/v1/rpc/execute_sql`, {
+                    const resCatalogSchema = await fetch(urlCatalogSchema, {
                         method: 'POST',
-                        headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query: `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${lcTablaLimpia}'` })
-                    });
-
-                    // Como Supabase por seguridad bloquea el execute_sql directo para anon,
-                    // la vía estándar e indestructible es crear una mini función RPC que lea el catálogo.
-                    // Para ahorrarte ir al panel de Supabase, usamos el truco de inspección de PostgREST:
-                    const urlInspeccion = `${SUPABASE_BASE.trim()}/${lcTablaLimpia}?limit=0`;
-                    const resInspeccion = await fetch(urlInspeccion, {
-                        method: 'GET',
-                        headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY, 'Prefer': 'count=exact' }
+                        headers: { 
+                            'apikey': SUPABASE_KEY, 
+                            'Authorization': "Bearer " + SUPABASE_KEY, 
+                            'Content-Type': 'application/json' 
+                        },
+                        body: JSON.stringify({ p_tabla: lcTablaLimpia }) // Le inyectamos el nombre de la tabla
                     });
                     
-                    // Extraemos los nombres de las columnas directamente de las cabeceras HTTP de respuesta (Response Headers)
-                    // PostgREST inyecta la definición de los campos adentro de la cabecera 'Content-Range' o de la metadata
-                    // Si no hay registros, barremos los campos leyendo las llaves de un lote simulado o del mapa estático simplificado:
-                    
-                    // =====================================================================
-                    // INTERROGACIÓN DINÁMICA MEDIANTE SENSOR HTTP
-                    // Si la tabla tiene al menos un registro ficticio o estructura base, leemos el mapa:
-                    // =====================================================================
-                    let lcCamposFinales = "";
-                    
-                    // Consultamos las columnas directamente al esquema de información expuesto por Supabase
-                    const resCatalogSchema = await fetch(`${SUPABASE_BASE.trim().split('/rest/v1')[0]}/rest/v1/` + 
-                        `rpc/get_tabla_columnas_vfp`, {
-                            method: 'POST',
-                            headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ p_tabla: lcTablaLimpia })
-                    });
+                    // Si el servidor HTTP de Supabase rebota, capturamos el bit de inmediato
+                    if (!resCatalogSchema.ok) {
+                        const txtErr = await resCatalogSchema.text();
+                        console.error("❌ Supabase rechazó la lectura del catálogo:", txtErr);
+                        return res.status(400).json({ exito: false, error: `La tabla ${lcTablaLimpia} no responde en el catálogo.` });
+                    }
                     
                     const dataCatalog = await resCatalogSchema.json();
                     
+                    // 2. Si la función devolvió las columnas en su arreglo, ejecutamos la traducción
                     if (dataCatalog && dataCatalog.length > 0 && Array.isArray(dataCatalog)) {
+                        let lcCamposFinales = "";
+                        
                         dataCatalog.forEach((col) => {
                             const nombreCampo = col.columna.toLowerCase().trim();
                             const tipoData = col.tipo.toLowerCase().trim();
-                            let tipoFoxPro = "C(250)";
+                            let tipoFoxPro = "C(250)"; // Máscara por defecto segura para textos planos
 
+                            // =============================================================
+                            // TRADUCTOR DE TIPOS DE HARDWARE EN MINÚSCULAS: POSTGRES -> VFP
+                            // =============================================================
                             switch (tipoData) {
                                 case 'integer': case 'bigint': case 'smallint':
-                                    tipoFoxPro = "I"; break;
+                                    tipoFoxPro = "I"; 
+                                    break;
+                                    
                                 case 'boolean':
-                                    tipoFoxPro = "L"; break;
+                                    tipoFoxPro = "L"; 
+                                    break;
+                                    
                                 case 'numeric': case 'double precision': case 'real':
-                                    tipoFoxPro = "N(12,2)"; break;
+                                    tipoFoxPro = "N(12,2)"; // Tus campos monetarios y alícuotas contables
+                                    break;
+                                    
                                 case 'date': case 'timestamp without time zone': case 'timestamp with time zone':
-                                    tipoFoxPro = "D"; break;
+                                    tipoFoxPro = "D"; 
+                                    break;
+                                    
                                 case 'character varying': case 'text':
-                                    if (nombreCampo === 'id_producto' || nombreCampo === 'id_empresa') tipoFoxPro = "C(15)";
-                                    else if (nombreCampo === 'factura' || nombreCampo === 'control' || nombreCampo === 'numero') tipoFoxPro = "C(20)";
-                                    else if (nombreCampo === 'cedula' || nombreCampo === 'rif' || nombreCampo === 'id') tipoFoxPro = "C(15)";
-                                    else tipoFoxPro = "C(250)";
+                                    // Mapeo selectivo de anclas según tu estructura física real
+                                    if (nombreCampo === 'id_producto' || nombreCampo === 'id_empresa') {
+                                        tipoFoxPro = "C(15)";
+                                    } else if (nombreCampo === 'factura' || nombreCampo === 'control' || nombreCampo === 'numero') {
+                                        tipoFoxPro = "C(20)";
+                                    } else if (nombreCampo === 'cedula' || nombreCampo === 'rif' || nombreCampo === 'id') {
+                                        tipoFoxPro = "C(15)";
+                                    } else if (nombreCampo === 'id_interno') {
+                                        tipoFoxPro = "I";
+                                    } else {
+                                        tipoFoxPro = "C(250)";
+                                    }
                                     break;
                             }
+                            
                             if (lcCamposFinales !== "") lcCamposFinales += ", ";
                             lcCamposFinales += `${nombreCampo} ${tipoFoxPro}`;
                         });
                         
-                        console.log(`🎯 Estructura dinámica recuperada de Supabase: ${lcCamposFinales}`);
+                        console.log(`🎯 Estructura dinámica despachada a FoxPro: ${lcCamposFinales}`);
+                        // Le escupimos a FoxPro el string crudo que necesita tu comando & dinámico
                         return res.status(200).send(lcCamposFinales);
                     } else {
-                        // Paracaídas de respaldo automatizado si no has sembrado el RPC todavía
-                      return res.status(400).json({ 
-                      exito: false, error: "falta sembrar la funcion de lectura de catalogo en Supabase." });
-                      }} 
-                    catch (errInner) {
-                    console.error("Error interno en estructura dinámica:", errInner.message);
-                    return res.status(500).json({ 
-                    exito: false, error: errInner.message });
+                        console.error(`⚠️ La tabla [${lcTablaLimpia}] no arrojó columnas en el information_schema.`);
+                        return res.status(400).json({ exito: false, error: `La tabla ${lcTablaLimpia} no tiene columnas creadas en la nube.` });
                     }
+
+                } catch (errInner) {
+                    console.error("❌ Fallo crítico en el mapeador dinámico de estructuras:", errInner.message);
+                    return res.status(500).json({ exito: false, error: errInner.message });
+                }
+
             // =====================================================================
             // 👉 CASO 2: BUSCAR
             // =====================================================================
