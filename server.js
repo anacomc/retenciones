@@ -14,7 +14,9 @@ const PORT          = process.env.PORT || 3000;
 // =====================================================================
 app.post('/api/pasarela/crud', async (req, res) => {
     // Recibimos el payload unificado desde tu clase de datos de FoxPro
-    const { tabla, accion, clave, datos, id_empresa } = req.body;
+    // const { tabla, accion, clave, datos, id_empresa } = req.body;
+    const { tabla, accion, clave, datos, id_empresa, campo_clave } = req.body;
+
 
     if (!tabla || !accion) {
         return res.status(400).json({ exito: false, error: "tabla y accion son obligatorias en la pasarela." });
@@ -120,33 +122,32 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     console.error("❌ Fallo crítico en el mapeador dinámico de estructuras:", errInner.message);
                     return res.status(500).json({ exito: false, error: errInner.message });
                 }
-
             // =====================================================================
-            // 👉 CASO 2: BUSCAR
+            // 👉 CASO 2: BUSCAR REGISTRO 100% DINÁMICO UNIVERSAL (AGNÓSTICO A 20 TABLAS)
             // =====================================================================
             case 'buscar':
-                if (!clave || !id_empresa) {
-                    return res.status(400).json({ encontrado: false, error: "falta la clave o el id_empresa." });
+                if (!clave || !id_empresa || !campo_clave) {
+                    return res.status(400).json({ encontrado: false, error: "Faltan variables en la ráfaga dinámica." });
                 }
-                
-                // Determinamos dinámicamente si es la tabla clientes (cedula) o retmaster (numero)
-                // const campoFiltro = (lcTablaLimpia === 'clientes') ? 'cedula' : 'numero' ;
-                const campoFiltro = (lcTablaLimpia === 'clientes') ? 'cedula' : 'rif';
-                const urlBuscar = `${urlBaseTabla}?id_empresa=eq.${id_empresa.trim()}&${campoFiltro}=eq.${encodeURIComponent(clave.trim())}`;
-                
-                console.log("📡 pasarela buscando por url: " + urlBuscar);
 
-                const resBuscar = await fetch(urlBuscar, {
+                // La URL se arma por hardware limpio sin importar si la tabla es empresas, retmaster o nómina
+                const urlBuscarDinamica = `${SUPABASE_BASE.trim()}/${tabla.trim().toLowerCase()}?id_empresa=ilike.${id_empresa.trim()}&${campo_clave.trim().toLowerCase()}=ilike.${encodeURIComponent(clave.trim())}`;
+                
+                console.log("📡 Pasarela universal disparando GET a: " + urlBuscarDinamica);
+
+                const resBuscarDinamica = await fetch(urlBuscarDinamica, {
                     method: 'GET',
-                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY, 'Content-Type': 'application/json' }
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
                 });
-                const dataBuscar = await resBuscar.json();
+                
+                const dataBuscarDinamica = await resBuscarDinamica.json();
 
-                if (dataBuscar && dataBuscar.length > 0 && Array.isArray(dataBuscar)) {
-                    return res.status(200).json({ encontrado: true, registro: dataBuscar[0] });
+                if (dataBuscarDinamica && dataBuscarDinamica.length > 0 && Array.isArray(dataBuscarDinamica)) {
+                    return res.status(200).json({ encontrado: true, registro: dataBuscarDinamica });
                 } else {
                     return res.status(200).json({ encontrado: false });
                 }
+
 
             // 👉 CASO 3: GUARDAR REGISTRO (MÉTODO POST - REGLA UPSERT CON CONFLICTO)
             case 'guardar':
