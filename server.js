@@ -180,7 +180,7 @@ app.post('/api/pasarela/crud', async (req, res) => {
                 }
                 
                 // Determinamos dinámicamente si es la tabla clientes (cedula) o retmaster (numero)
-                // const campoFiltro = (lcTablaLimpia === 'clientes') ? 'cedula' : 'numero';
+                // const campoFiltro = (lcTablaLimpia === 'clientes') ? 'cedula' : 'numero' ;
                 const campoFiltro = (lcTablaLimpia === 'clientes') ? 'cedula' : 'rif';
                 const urlBuscar = `${urlBaseTabla}?id_empresa=eq.${id_empresa.trim()}&${campoFiltro}=eq.${encodeURIComponent(clave.trim())}`;
                 
