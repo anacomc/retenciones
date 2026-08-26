@@ -236,7 +236,7 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     numero_control: dataRpc.numero_control 
                 });
             // =====================================================================
-            // 👉 CASO 5: GUARDADO AUTÓNOMO DE EMPRESAS CON CONTROL DE CUPOS (POST)
+            // 👉 CASO 6: GUARDADO AUTÓNOMO DE EMPRESAS CON CONTROL DE CUPOS (POST)
             // =====================================================================
             case 'guardar_empresa':
                 if (!datos || !datos.id_matriz || !datos.id_empresa) {
@@ -244,10 +244,11 @@ app.post('/api/pasarela/crud', async (req, res) => {
                 }
 
                 try {
-                    const lcIdMatriz = datos.id_matriz.trim().toLowerCase();
-                    const lcIdEmpresa = datos.id_empresa.trim().toLowerCase();
+                    // Mantenemos strictly el RIF y la matriz en MAYÚSCULAS sin alterar los bytes
+                    const lcIdMatriz = datos.id_matriz.trim();
+                    const lcIdEmpresa = datos.id_empresa.trim();
 
-                    // 1. Buscamos el registro Máster de la licencia para saber cuántos cupos pagó este cliente
+                    // 1. Buscamos el registro Máster de la licencia
                     const urlLicencia = `${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${lcIdMatriz}`;
                     const resLicencia = await fetch(urlLicencia, {
                         method: 'GET',
@@ -259,23 +260,19 @@ app.post('/api/pasarela/crud', async (req, res) => {
                         return res.status(400).json({ exito: false, error: "Licencia matriz no localizada en el búnker." });
                     }
 
-                    const maxCupos = parseInt(dataLicencia[0].cupos_licencias || 1);
+                    const maxCupos = parseInt(dataLicencia.cupos_licencias || 1);
 
                     // 2. Contamos cuántas empresas ha creado este cliente en la nube actualmente
                     const urlConteo = `${SUPABASE_BASE.trim()}/empresas?id_matriz=eq.${lcIdMatriz}&select=id_empresa`;
                     const resConteo = await fetch(urlConteo, {
                         method: 'GET',
-                        headers: { 
-                            'apikey': SUPABASE_KEY, 
-                            'Authorization': "Bearer " + SUPABASE_KEY,
-                            'Prefer': 'count=exact' // Le exige a Supabase calcular el total por hardware
-                        }
+                        headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY, 'Prefer': 'count=exact' }
                     });
                     
                     const rangoHeader = resConteo.headers.get('content-range');
                     let totalCreadas = 0;
                     if (rangoHeader && rangoHeader.includes('/')) {
-                        totalCreadas = parseInt(rangoHeader.split('/')[1]) || 0;
+                        totalCreadas = parseInt(rangoHeader.split('/')) || 0;
                     }
 
                     // 3. VALIDACIÓN DE HARDWARE: Verificamos si la empresa ya existe
@@ -294,10 +291,10 @@ app.post('/api/pasarela/crud', async (req, res) => {
                             exito: false, 
                             bloqueado: true, 
                             error: `Ha alcanzado el límite máximo de (${maxCupos}) empresas permitidas en su plan contable contratado.` 
-                    });
+                        });
                     }
 
-                    // 4. LUZ VERDE: Si tiene cupo o es modificación, procesamos el Upsert dinámico en las celdas web
+                    // 4. LUZ VERDE: Procesamos el Upsert dinámico respetando el formato del escritorio
                     const urlUpsertEmp = `${SUPABASE_BASE.trim()}/empresas?on_conflict=id_empresa`;
                     const resUpsertEmp = await fetch(urlUpsertEmp, {
                         method: 'POST',
@@ -312,7 +309,7 @@ app.post('/api/pasarela/crud', async (req, res) => {
                             id_matriz: lcIdMatriz,
                             rif: datos.rif ? datos.rif.trim() : "",
                             razon_social: datos.razon_social ? datos.razon_social.trim() : "",
-                            cupos_licencias: esNueva ? 1 : (dataExiste[0].cupos_licencias || 1), // Protegemos que el cliente no se auto-asigne cupos infinitos
+                            cupos_licencias: esNueva ? 1 : (dataExiste[0].cupos_licencias || 1),
                             status: datos.status !== undefined ? datos.status : true
                         })
                     });
@@ -330,7 +327,8 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     console.error("❌ Fallo crítico en compuerta de guardar_empresa:", errEmpresa.message);
                     return res.status(500).json({ exito: false, error: errEmpresa.message });
                 }
-                
+
+        //**********************************************************************************************************************************         
         }
 
     } catch (error) {
