@@ -154,7 +154,7 @@ app.post('/api/pasarela/crud', async (req, res) => {
                 if (!datos) return res.status(400).json({ exito: false, error: "falta el objeto de datos." });
 
                 // Determinamos cuál es el candado único según la estructura relacional sembrada
-                const campoConflicto = (lcTablaLimpia === 'clientes') ? 'id_empresa,cedula' : 'id_empresa,numero';
+                const campoConflicto = (lcTablaLimpia === 'clientes') ? 'id_empresa,cedula' : 'id_empresa,rif';
                 const urlGuardar = `${urlBaseTabla}?on_conflict=${campoConflicto}`;
                 
                 console.log("💾 pasarela guardando en url: " + urlGuardar);
