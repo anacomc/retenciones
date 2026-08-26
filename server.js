@@ -179,10 +179,17 @@ app.post('/api/pasarela/crud', async (req, res) => {
 
             // 👉 CASO 4: ANULACIÓN LÓGICA (NO ELIMINA, PONE STATUS EN FALSE)
             case 'anular':
-                if (!clave || !id_empresa) return res.status(400).json({ exito: false, error: "datos insuficientes." });
+                if (!clave || !id_empresa || !campo_clave) {
+                    return res.status(400).json({ encontrado: false, error: "Faltan variables en la ráfaga dinámica." });
+                }
 
-                const urlAnular = `${urlBaseTabla}?id_empresa=eq.${id_empresa.trim()}&numero=eq.${encodeURIComponent(clave.trim())}`;
-                console.log("🗑️ pasarela anulando en url: " + urlAnular);
+                // La URL se arma por hardware limpio sin importar si la tabla es empresas, retmaster o nómina
+                const urlAnular = `${SUPABASE_BASE.trim()}/${tabla.trim().toLowerCase()}?id_empresa=ilike.${id_empresa.trim()}&${campo_clave.trim().toLowerCase()}=ilike.${encodeURIComponent(clave.trim())}`;
+                
+                console.log("📡 Pasarela universal disparando ANULAR a: " + urlAnular);                
+                
+                // const urlAnular = `${urlBaseTabla}?id_empresa=eq.${id_empresa.trim()}&numero=eq.${encodeURIComponent(clave.trim())}`;
+                // console.log("🗑️ pasarela anulando en url: " + urlAnular);
 
                 const resAnular = await fetch(urlAnular, {
                     method: 'PATCH', // Planchamos únicamente la celda del estatus
