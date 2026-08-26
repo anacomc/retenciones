@@ -188,9 +188,6 @@ app.post('/api/pasarela/crud', async (req, res) => {
                 
                 console.log("📡 Pasarela universal disparando ANULAR a: " + urlAnular);                
                 
-                // const urlAnular = `${urlBaseTabla}?id_empresa=eq.${id_empresa.trim()}&numero=eq.${encodeURIComponent(clave.trim())}`;
-                // console.log("🗑️ pasarela anulando en url: " + urlAnular);
-
                 const resAnular = await fetch(urlAnular, {
                     method: 'PATCH', // Planchamos únicamente la celda del estatus
                     headers: {
