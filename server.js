@@ -249,8 +249,8 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     const lcIdMatriz  = datos.id_matriz.trim();
                     const lcIdEmpresa = id_empresa.trim();
 
-                    // 1. Buscamos el registro Máster de la licencia en tu Supabase para auditar cupos
-                    const urlLicencia = `${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${lcIdMatriz}`;
+                    // 1. REMACHE DE ACERO: Buscamos los cupos contratados en la tabla SATÉLITE 'licencias'
+                    const urlLicencia = `${SUPABASE_BASE.trim()}/licencias?id_matriz=eq.${lcIdMatriz}&status=eq.true`;
                     const resLicencia = await fetch(urlLicencia, {
                         method: 'GET',
                         headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
@@ -258,27 +258,27 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     const dataLicencia = await resLicencia.json();
 
                     if (!dataLicencia || dataLicencia.length === 0) {
-                        return res.status(400).json({ exito: false, error: "Licencia matriz no localizada en el búnker." });
+                        return res.status(200).json({ exito: false, error: "La licencia Máster de esta oficina no está activa o no existe." });
                     }
 
-                    // Extraemos el límite de empresas que te pagó este cliente de forma matemática
-                    const maxCupos = parseInt(dataLicencia[0].cupos_licencias || 1);
+                    // Leemos el nombre exacto de tu nueva columna: 'cupos_contratados'
+                    const maxCupos = parseInt(dataLicencia[0].cupos_contratados || 1);
 
-                    // 2. Contamos de forma síncrona cuántas sub-empresas tiene creadas este cliente actualmente
+                    // 2. Contamos cuántas empresas de trabajo reales ha creado esta matriz en la tabla 'empresas'
                     const urlConteo = `${SUPABASE_BASE.trim()}/empresas?id_matriz=eq.${lcIdMatriz}&select=id_empresa`;
                     const resConteo = await fetch(urlConteo, {
                         method: 'GET',
                         headers: { 
                             'apikey': SUPABASE_KEY, 
                             'Authorization': "Bearer " + SUPABASE_KEY,
-                            'Prefer': 'count=exact' // Le exige a PostgREST calcular el total exacto por hardware
+                            'Prefer': 'count=exact' 
                         }
                     });
                     
                     const rangoHeader = resConteo.headers.get('content-range');
                     let totalCreadas = 0;
                     if (rangoHeader && rangoHeader.includes('/')) {
-                        totalCreadas = parseInt(rangoHeader.split('/')[1]) || 0;
+                        totalCreadas = parseInt(rangoHeader.split('/')) || 0;
                     }
 
                     // 3. VALIDACIÓN DE HARDWARE: Verificamos si la empresa ya existe en el disco real
