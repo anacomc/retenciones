@@ -249,7 +249,9 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     const lcIdMatriz  = datos.id_matriz.trim();
                     const lcIdEmpresa = id_empresa.trim();
 
-                    // 1. REMACHE DE ACERO: Buscamos los cupos contratados en la tabla SATÉLITE 'licencias'
+                    // =====================================================================
+                    // 1. REMACHE DE HARDWARE: Leemos la fila CERO [0] del arreglo de licencias
+                    // =====================================================================
                     const urlLicencia = `${SUPABASE_BASE.trim()}/licencias?id_matriz=eq.${lcIdMatriz}&status=eq.true`;
                     const resLicencia = await fetch(urlLicencia, {
                         method: 'GET',
@@ -257,12 +259,14 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     });
                     const dataLicencia = await resLicencia.json();
 
-                    if (!dataLicencia || dataLicencia.length === 0) {
+                    // Si el arreglo viene vacío, la licencia no existe en el búnker
+                    if (!dataLicencia || !Array.isArray(dataLicencia) || dataLicencia.length === 0) {
                         return res.status(200).json({ exito: false, error: "La licencia Máster de esta oficina no está activa o no existe." });
                     }
 
-                    // Leemos el nombre exacto de tu nueva columna: 'cupos_contratados'
+                    // JUGADA MAESTRA: Extraemos la propiedad strictly desde el índice [0] del JSON
                     const maxCupos = parseInt(dataLicencia[0].cupos_contratados || 1);
+                    console.log(`📡 Licencia localizada por hardware. Matriz: ${lcIdMatriz} | Cupos Máximos: ${maxCupos}`);
 
                     // 2. Contamos cuántas empresas de trabajo reales ha creado esta matriz en la tabla 'empresas'
                     const urlConteo = `${SUPABASE_BASE.trim()}/empresas?id_matriz=eq.${lcIdMatriz}&select=id_empresa`;
