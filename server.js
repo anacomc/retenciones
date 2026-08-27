@@ -319,6 +319,42 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     console.error("❌ Fallo en guardar_empresa:", errEmpresa.message);
                     return res.status(500).json({ exito: false, error: errEmpresa.message });
                 }
+            // =====================================================================
+            // 👉 CASO 7: ELIMINACIÓN FÍSICA UNIVERSAL (DELETE DE ACERO INOXIDABLE)
+            // =====================================================================
+            case 'eliminar':
+                if (!clave || !id_empresa || !campo_clave) {
+                    return res.status(400).json({ exito: false, error: "Faltan variables para ejecutar el borrado físico." });
+                }
+
+                try {
+                    // PostgREST ejecuta el borrado físico aplicando el método DELETE sobre la URL filtrada
+                    const urlEliminar = `${SUPABASE_BASE.trim()}/${lcTablaLimpia}?id_empresa=ilike.${id_empresa.trim()}&${campo_clave.trim().toLowerCase()}=ilike.${encodeURIComponent(clave.trim())}`;
+                    
+                    console.log(`🗑️ Pasarela ejecutando DELETE físico en: ${urlEliminar}`);
+
+                    const resEliminar = await fetch(urlEliminar, {
+                        method: 'DELETE', // <-- Comando nativo de Postgres para purgar la fila del disco real
+                        headers: {
+                            'apikey': SUPABASE_KEY,
+                            'Authorization': "Bearer " + SUPABASE_KEY,
+                            'Prefer': 'return=representation' // Le exige a Supabase que confirme qué se borró
+                        }
+                    });
+
+                    if (!resEliminar.ok) {
+                        const txtErrE = await resEliminar.text();
+                        console.error("❌ Borrado físico bloqueado por hardware:", txtErrE);
+                        return res.status(400).json({ exito: false, error: "No se pudo eliminar el registro por integridad referencial." });
+                    }
+
+                    console.log(`✅ Registro purgado con éxito de la tabla [${lcTablaLimpia}]`);
+                    return res.status(200).json({ exito: true });
+
+                } catch (errEliminar) {
+                    console.error("❌ Fallo crítico en el microservicio eliminar:", errEliminar.message);
+                    return res.status(500).json({ exito: false, error: errEliminar.message });
+                }
 
 
 
