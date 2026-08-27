@@ -356,22 +356,22 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     return res.status(500).json({ exito: false, error: errEliminar.message });
                 }
             // =====================================================================
-            // 👉 CASO 7: EXTRAER EL ÚLTIMO REGISTRO AGREGADO MULTI-TENANT (GET)
+            // 👉 CASO 7: EXTRAER EL ÚLTIMO REGISTRO REAL CRONOLÓGICO (REPARADO)
             // =====================================================================
             case 'ultimo':
                 if (!id_empresa || !campo_clave) {
-                    return res.status(400).json({ exito: false, error: "Faltan variables de indexación para calcular el último registro." });
+                    return res.status(400).json({ exito: false, error: "Faltan variables para calcular el último registro cronológico." });
                 }
 
                 try {
-                    // LA JUGADA MAESTRA DE POSTGREST: Filtramos por empresa activa, 
-                    // ordenamos por su campo_clave de forma DESCENDENTE y le clavamos un limit=1 
-                    // para succionar únicamente la última celda que tocó el disco real.
-                    const urlUltimo = `${SUPABASE_BASE.trim()}/${lcTablaLimpia}?id_empresa=ilike.${id_empresa.trim()}&order=${campo_clave.trim().toLowerCase()}.desc&limit=1`;
+                    // LA JUGADA MAESTRA DE HARDWARE: Ordenamos estrictamente por 'created_at.desc' 
+                    // (la marca de tiempo inmutable de Postgres) filtrando por tu empresa del Combo,
+                    // asegurando que el registro de la fila cero sea el último que guardó el operador.
+                    const urlUltimoCronologico = `${SUPABASE_BASE.trim()}/${lcTablaLimpia}?id_empresa=ilike.${id_empresa.trim()}&order=created_at.desc&limit=1`;
                     
-                    console.log(`🔍 Pasarela rastreando el último bit en: ${urlUltimo}`);
+                    console.log(`🔍 Rastreando cronología del último bit en: ${urlUltimoCronologico}`);
 
-                    const resUltimo = await fetch(urlUltimo, {
+                    const resUltimo = await fetch(urlUltimoCronologico, {
                         method: 'GET',
                         headers: { 
                             'apikey': SUPABASE_KEY, 
@@ -381,31 +381,35 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     });
 
                     if (!resUltimo.ok) {
-                        const txtErrU = await resUltimo.text();
-                        console.error("❌ Fallo de lectura del catálogo de últimos:", txtErrU);
-                        return res.status(400).json({ exito: false, error: "Error al interrogar el último registro en la nube." });
+                        // PARACAÍDAS DE RESPALDO: Si la tabla no tiene la columna created_at por algún motivo,
+                        // intentamos ordenar por su ID autoincremental de respaldo (id_interno o id)
+                        const urlFailsafe = `${SUPABASE_BASE.trim()}/${lcTablaLimpia}?id_empresa=ilike.${id_empresa.trim()}&order=id.desc&limit=1`;
+                        console.log(`⚠️ Tabla sin timestamp. Activando failsafe por ID en: ${urlFailsafe}`);
+                        
+                        const resFailsafe = await fetch(urlFailsafe, {
+                            method: 'GET',
+                            headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
+                        });
+                        
+                        if (!resFailsafe.ok) return res.status(400).json({ exito: false, error: "La tabla no dispone de sensores cronológicos." });
+                        
+                        const dataFail = await resFailsafe.json();
+                        if (dataFail && dataFail.length > 0) return res.status(200).json({ encontrado: true, registro: dataFail });
+                        return res.status(200).json({ encontrado: false });
                     }
 
                     const dataUltimo = await resUltimo.json();
 
-                    // Si consiguó la fila (el arreglo tiene el último registro de esa empresa)
                     if (dataUltimo && dataUltimo.length > 0 && Array.isArray(dataUltimo)) {
-                        return res.status(200).json({ 
-                            encontrado: true, 
-                            registro: dataUltimo[0] // Le devolvemos strictly el objeto plano de la fila cero
-                        });
+                        return res.status(200).json({ encontrado: true, registro: dataUltimo });
                     } else {
-                        // Si la tabla está totalmente en blanco para esa empresa, devolvemos false limpio
                         return res.status(200).json({ encontrado: false });
                     }
 
                 } catch (errUltimo) {
-                    console.error("❌ Fallo crítico en el microservicio ultimo:", errUltimo.message);
+                    console.error("❌ Fallo crítico en ráfaga de últimos:", errUltimo.message);
                     return res.status(500).json({ exito: false, error: errUltimo.message });
                 }
-
-
-
 
         //**********************************************************************************************************************************         
         }
