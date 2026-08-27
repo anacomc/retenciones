@@ -250,7 +250,7 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     const lcIdEmpresa = id_empresa.trim();
 
                     // =====================================================================
-                    // 1. REMACHE DE HARDWARE: Leemos la fila CERO [0] del arreglo de licencias
+                    // 1. REMACHE DE SEGURIDAD CORREGIDO: Extraemos la fila CERO [0] real
                     // =====================================================================
                     const urlLicencia = `${SUPABASE_BASE.trim()}/licencias?id_matriz=eq.${lcIdMatriz}&status=eq.true`;
                     const resLicencia = await fetch(urlLicencia, {
@@ -259,14 +259,15 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     });
                     const dataLicencia = await resLicencia.json();
 
-                    // Si el arreglo viene vacío, la licencia no existe en el búnker
+                    // Validamos con precisión de relojero si el arreglo vino vacío de la nube
                     if (!dataLicencia || !Array.isArray(dataLicencia) || dataLicencia.length === 0) {
                         return res.status(200).json({ exito: false, error: "La licencia Máster de esta oficina no está activa o no existe." });
                     }
 
-                    // JUGADA MAESTRA: Extraemos la propiedad strictly desde el índice [0] del JSON
+                    // LA JUGADA MAESTRA POR HARDWARE: Le clavamos el [0] en el nacimiento de la celda
                     const maxCupos = parseInt(dataLicencia[0].cupos_contratados || 1);
-                    console.log(`📡 Licencia localizada por hardware. Matriz: ${lcIdMatriz} | Cupos Máximos: ${maxCupos}`);
+                    console.log(`📡 Candado Sincronizado. Matriz: ${lcIdMatriz} | Cupos Máximos Reales: ${maxCupos}`);
+
 
                     // 2. Contamos cuántas empresas de trabajo reales ha creado esta matriz en la tabla 'empresas'
                     const urlConteo = `${SUPABASE_BASE.trim()}/empresas?id_matriz=eq.${lcIdMatriz}&select=id_empresa`;
