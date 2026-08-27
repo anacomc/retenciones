@@ -321,36 +321,6 @@ app.post('/api/pasarela/crud', async (req, res) => {
                 }
 
 
-                    // 4. LUZ VERDE EN CASCADA: Si tiene cupo o es una modificación, ejecutamos el Upsert
-                    // Pasamos la bolsa de 'datos' cruda, autónoma e inmutable directo a la tabla de Supabase
-                    const urlUpsertEmp = `${SUPABASE_BASE.trim()}/${lcTablaLimpia}?on_conflict=id_empresa`;
-                    
-                    console.log(`💾 Ejecutando Upsert directo de empresas en: ${urlUpsertEmp}`);
-
-                    const resUpsertEmp = await fetch(urlUpsertEmp, {
-                        method: 'POST',
-                        headers: {
-                            'apikey': SUPABASE_KEY,
-                            'Authorization': "Bearer " + SUPABASE_KEY,
-                            'Content-Type': 'application/json',
-                            'Prefer': 'action=upsert,resolution=merge-duplicates' // Regla Upsert reglamentaria de Supabase
-                        },
-                        body: JSON.stringify(datos) // Grabamos el clon exacto de tu cursor de trabajo local de FoxPro
-                    });
-
-                    if (!resUpsertEmp.ok) {
-                        const txtErrU = await resUpsertEmp.text();
-                        console.error("❌ Error de asimiento en Supabase:", txtErrU);
-                        return res.status(400).json({ exito: false, error: "Error al asentar la empresa en la base de datos." });
-                    }
-
-                    console.log(`✅ Empresa ${lcIdEmpresa} asentada con éxito de forma autónoma. Matriz: ${lcIdMatriz}`);
-                    return res.status(200).json({ exito: true });
-
-                } catch (errEmpresa) {
-                    console.error("❌ Fallo crítico en el microservicio guardar_empresa:", errEmpresa.message);
-                    return res.status(500).json({ exito: false, error: errEmpresa.message });
-                }
 
 
         //**********************************************************************************************************************************         
