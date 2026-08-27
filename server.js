@@ -355,6 +355,54 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     console.error("❌ Fallo crítico en el microservicio eliminar:", errEliminar.message);
                     return res.status(500).json({ exito: false, error: errEliminar.message });
                 }
+            // =====================================================================
+            // 👉 CASO 7: EXTRAER EL ÚLTIMO REGISTRO AGREGADO MULTI-TENANT (GET)
+            // =====================================================================
+            case 'ultimo':
+                if (!id_empresa || !campo_clave) {
+                    return res.status(400).json({ exito: false, error: "Faltan variables de indexación para calcular el último registro." });
+                }
+
+                try {
+                    // LA JUGADA MAESTRA DE POSTGREST: Filtramos por empresa activa, 
+                    // ordenamos por su campo_clave de forma DESCENDENTE y le clavamos un limit=1 
+                    // para succionar únicamente la última celda que tocó el disco real.
+                    const urlUltimo = `${SUPABASE_BASE.trim()}/${lcTablaLimpia}?id_empresa=ilike.${id_empresa.trim()}&order=${campo_clave.trim().toLowerCase()}.desc&limit=1`;
+                    
+                    console.log(`🔍 Pasarela rastreando el último bit en: ${urlUltimo}`);
+
+                    const resUltimo = await fetch(urlUltimo, {
+                        method: 'GET',
+                        headers: { 
+                            'apikey': SUPABASE_KEY, 
+                            'Authorization': "Bearer " + SUPABASE_KEY,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (!resUltimo.ok) {
+                        const txtErrU = await resUltimo.text();
+                        console.error("❌ Fallo de lectura del catálogo de últimos:", txtErrU);
+                        return res.status(400).json({ exito: false, error: "Error al interrogar el último registro en la nube." });
+                    }
+
+                    const dataUltimo = await resUltimo.json();
+
+                    // Si consiguó la fila (el arreglo tiene el último registro de esa empresa)
+                    if (dataUltimo && dataUltimo.length > 0 && Array.isArray(dataUltimo)) {
+                        return res.status(200).json({ 
+                            encontrado: true, 
+                            registro: dataUltimo[0] // Le devolvemos strictly el objeto plano de la fila cero
+                        });
+                    } else {
+                        // Si la tabla está totalmente en blanco para esa empresa, devolvemos false limpio
+                        return res.status(200).json({ encontrado: false });
+                    }
+
+                } catch (errUltimo) {
+                    console.error("❌ Fallo crítico en el microservicio ultimo:", errUltimo.message);
+                    return res.status(500).json({ exito: false, error: errUltimo.message });
+                }
 
 
 
