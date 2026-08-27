@@ -249,9 +249,19 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     const lcIdMatriz  = datos.id_matriz.trim();
                     const lcIdEmpresa = id_empresa.trim();
 
-                    // =====================================================================
-                    // 1. REMACHE DE SEGURIDAD CORREGIDO: Extraemos la fila CERO [0] real
-                    // =====================================================================
+            // =====================================================================
+            // 👉 CASO 5: GUARDADO DE EMPRESAS CON CONTROL DE LICENCIAS (REPARADO)
+            // =====================================================================
+            case 'guardar_empresa':
+                if (!datos || !datos.id_matriz || !id_empresa) {
+                    return res.status(400).json({ exito: false, error: "Estructura de licenciamiento incompleta." });
+                }
+
+                try {
+                    const lcIdMatriz  = datos.id_matriz.trim();
+                    const lcIdEmpresa = id_empresa.trim();
+
+                    // 1. Buscamos los cupos contratados en la tabla satélite 'licencias'
                     const urlLicencia = `${SUPABASE_BASE.trim()}/licencias?id_matriz=eq.${lcIdMatriz}&status=eq.true`;
                     const resLicencia = await fetch(urlLicencia, {
                         method: 'GET',
@@ -259,51 +269,71 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     });
                     const dataLicencia = await resLicencia.json();
 
-                    // Validamos con precisión de relojero si el arreglo vino vacío de la nube
                     if (!dataLicencia || !Array.isArray(dataLicencia) || dataLicencia.length === 0) {
                         return res.status(200).json({ exito: false, error: "La licencia Máster de esta oficina no está activa o no existe." });
                     }
 
-                    // LA JUGADA MAESTRA POR HARDWARE: Le clavamos el [0] en el nacimiento de la celda
+                    // REMACHE 1: Perforamos el corchete usando el índice cero [0] real de JavaScript
                     const maxCupos = parseInt(dataLicencia[0].cupos_contratados || 1);
-                    console.log(`📡 Candado Sincronizado. Matriz: ${lcIdMatriz} | Cupos Máximos Reales: ${maxCupos}`);
 
-
-                    // 2. Contamos cuántas empresas de trabajo reales ha creado esta matriz en la tabla 'empresas'
+                    // 2. CONTEO REAL POR HARDWARE: Traemos la lista de empresas creadas para esta matriz
                     const urlConteo = `${SUPABASE_BASE.trim()}/empresas?id_matriz=eq.${lcIdMatriz}&select=id_empresa`;
                     const resConteo = await fetch(urlConteo, {
                         method: 'GET',
-                        headers: { 
-                            'apikey': SUPABASE_KEY, 
-                            'Authorization': "Bearer " + SUPABASE_KEY,
-                            'Prefer': 'count=exact' 
-                        }
+                        headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
                     });
+                    const dataConteo = await resConteo.json();
                     
-                    const rangoHeader = resConteo.headers.get('content-range');
-                    let totalCreadas = 0;
-                    if (rangoHeader && rangoHeader.includes('/')) {
-                        totalCreadas = parseInt(rangoHeader.split('/')) || 0;
-                    }
+                    // REMACHE 2: Contamos directo el tamaño de la lista en la RAM (Inmune a fallas de cabeceras)
+                    let totalCreadas = (dataConteo && Array.isArray(dataConteo)) ? dataConteo.length : 0;
 
-                    // 3. VALIDACIÓN DE HARDWARE: Verificamos si la empresa ya existe en el disco real
+                    console.log(`📡 AUDITORÍA EN VIVO -> Matriz: ${lcIdMatriz} | Límite: ${maxCupos} | Creadas en Nube: ${totalCreadas}`);
+
+                    // 3. VALIDACIÓN DE EXISTENCIA: Verificamos si es una sub-empresa vieja (Modificación)
                     const urlExiste = `${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${lcIdEmpresa}`;
                     const resExiste = await fetch(urlExiste, {
                         method: 'GET',
                         headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY }
                     });
                     const dataExiste = await resExiste.json();
-                    const esNueva = (dataExiste.length === 0);
+                    const esNueva = (!dataExiste || dataExiste.length === 0);
 
-                    // EL CANDADO COMERCIAL: Si es un registro NUEVO y ya consumió sus cupos, cerramos el grifo
+                    // =====================================================================
+                    // EL CANDADO IMPLACABLE: Frena en seco si intenta violar los cupos
+                    // =====================================================================
                     if (esNueva && totalCreadas >= maxCupos) {
-                        console.log(`⚠️ Bloqueo de cupos para matriz ${lcIdMatriz}. Creadas: ${totalCreadas}, Máximo: ${maxCupos}`);
+                        console.log(`❌ BLOQUEO POR HARDWARE: Límite excedido para ${lcIdMatriz}.`);
                         return res.status(200).json({ 
                             exito: false, 
                             bloqueado: true, 
                             error: `Ha alcanzado el límite máximo de (${maxCupos}) empresas permitidas en su plan contable contratado.` 
                         });
                     }
+
+                    // 4. LUZ VERDE: Procesamos el Upsert atómico en Supabase
+                    const urlUpsertEmp = `${SUPABASE_BASE.trim()}/${lcTablaLimpia}?on_conflict=id_empresa`;
+                    const resUpsertEmp = await fetch(urlUpsertEmp, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_KEY,
+                            'Authorization': "Bearer " + SUPABASE_KEY,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'action=upsert,resolution=merge-duplicates'
+                        },
+                        body: JSON.stringify(datos)
+                    });
+
+                    if (!resUpsertEmp.ok) {
+                        return res.status(400).json({ exito: false, error: "Error al asentar la empresa en la base de datos." });
+                    }
+
+                    return res.status(200).json({ exito: true });
+
+                } catch (errEmpresa) {
+                    console.error("❌ Fallo en guardar_empresa:", errEmpresa.message);
+                    return res.status(500).json({ exito: false, error: errEmpresa.message });
+                }
+
 
                     // 4. LUZ VERDE EN CASCADA: Si tiene cupo o es una modificación, ejecutamos el Upsert
                     // Pasamos la bolsa de 'datos' cruda, autónoma e inmutable directo a la tabla de Supabase
