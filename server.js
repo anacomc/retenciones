@@ -239,16 +239,17 @@ app.post('/api/pasarela/crud', async (req, res) => {
             // 👉 CASO 6: GUARDADO AUTÓNOMO DE EMPRESAS CON CONTROL DE CUPOS (POST)
             // =====================================================================
             case 'guardar_empresa':
-                if (!datos || !datos.id_matriz || !datos.id_empresa) {
-                    return res.status(400).json({ exito: false, error: "Estructura de licenciamiento incompleta." });
+                // Validación estricta del sobre y del contenido de la bolsa 'datos'
+                if (!datos || !datos.id_matriz || !id_empresa) {
+                    return res.status(400).json({ exito: false, error: "Estructura de licenciamiento incompleta en el payload." });
                 }
 
                 try {
-                    // Mantenemos strictly el RIF y la matriz en MAYÚSCULAS sin alterar los bytes
-                    const lcIdMatriz = datos.id_matriz.trim();
-                    const lcIdEmpresa = datos.id_empresa.trim();
+                    // Limpiamos los IDs de control que viajan strictly en MAYÚSCULAS desde FoxPro
+                    const lcIdMatriz  = datos.id_matriz.trim();
+                    const lcIdEmpresa = id_empresa.trim();
 
-                    // 1. Buscamos el registro Máster de la licencia
+                    // 1. Buscamos el registro Máster de la licencia en tu Supabase para auditar cupos
                     const urlLicencia = `${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${lcIdMatriz}`;
                     const resLicencia = await fetch(urlLicencia, {
                         method: 'GET',
@@ -260,22 +261,27 @@ app.post('/api/pasarela/crud', async (req, res) => {
                         return res.status(400).json({ exito: false, error: "Licencia matriz no localizada en el búnker." });
                     }
 
-                    const maxCupos = parseInt(dataLicencia.cupos_licencias || 1);
+                    // Extraemos el límite de empresas que te pagó este cliente de forma matemática
+                    const maxCupos = parseInt(dataLicencia[0].cupos_licencias || 1);
 
-                    // 2. Contamos cuántas empresas ha creado este cliente en la nube actualmente
+                    // 2. Contamos de forma síncrona cuántas sub-empresas tiene creadas este cliente actualmente
                     const urlConteo = `${SUPABASE_BASE.trim()}/empresas?id_matriz=eq.${lcIdMatriz}&select=id_empresa`;
                     const resConteo = await fetch(urlConteo, {
                         method: 'GET',
-                        headers: { 'apikey': SUPABASE_KEY, 'Authorization': "Bearer " + SUPABASE_KEY, 'Prefer': 'count=exact' }
+                        headers: { 
+                            'apikey': SUPABASE_KEY, 
+                            'Authorization': "Bearer " + SUPABASE_KEY,
+                            'Prefer': 'count=exact' // Le exige a PostgREST calcular el total exacto por hardware
+                        }
                     });
                     
                     const rangoHeader = resConteo.headers.get('content-range');
                     let totalCreadas = 0;
                     if (rangoHeader && rangoHeader.includes('/')) {
-                        totalCreadas = parseInt(rangoHeader.split('/')) || 0;
+                        totalCreadas = parseInt(rangoHeader.split('/')[1]) || 0;
                     }
 
-                    // 3. VALIDACIÓN DE HARDWARE: Verificamos si la empresa ya existe
+                    // 3. VALIDACIÓN DE HARDWARE: Verificamos si la empresa ya existe en el disco real
                     const urlExiste = `${SUPABASE_BASE.trim()}/empresas?id_empresa=eq.${lcIdEmpresa}`;
                     const resExiste = await fetch(urlExiste, {
                         method: 'GET',
@@ -284,7 +290,7 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     const dataExiste = await resExiste.json();
                     const esNueva = (dataExiste.length === 0);
 
-                    // CONTROL DE CANDADO: Si intenta meter una nueva y ya gastó los cupos, frena el grifo
+                    // EL CANDADO COMERCIAL: Si es un registro NUEVO y ya consumió sus cupos, cerramos el grifo
                     if (esNueva && totalCreadas >= maxCupos) {
                         console.log(`⚠️ Bloqueo de cupos para matriz ${lcIdMatriz}. Creadas: ${totalCreadas}, Máximo: ${maxCupos}`);
                         return res.status(200).json({ 
@@ -294,29 +300,26 @@ app.post('/api/pasarela/crud', async (req, res) => {
                         });
                     }
 
-                    // 4. LUZ VERDE: Procesamos el Upsert dinámico respetando el formato del escritorio
-                    const urlUpsertEmp = `${SUPABASE_BASE.trim()}/empresas?on_conflict=id_empresa`;
+                    // 4. LUZ VERDE EN CASCADA: Si tiene cupo o es una modificación, ejecutamos el Upsert
+                    // Pasamos la bolsa de 'datos' cruda, autónoma e inmutable directo a la tabla de Supabase
+                    const urlUpsertEmp = `${SUPABASE_BASE.trim()}/${lcTablaLimpia}?on_conflict=id_empresa`;
+                    
+                    console.log(`💾 Ejecutando Upsert directo de empresas en: ${urlUpsertEmp}`);
+
                     const resUpsertEmp = await fetch(urlUpsertEmp, {
                         method: 'POST',
                         headers: {
                             'apikey': SUPABASE_KEY,
                             'Authorization': "Bearer " + SUPABASE_KEY,
                             'Content-Type': 'application/json',
-                            'Prefer': 'action=upsert,resolution=merge-duplicates'
+                            'Prefer': 'action=upsert,resolution=merge-duplicates' // Regla Upsert reglamentaria de Supabase
                         },
-                        body: JSON.stringify({
-                            id_empresa: lcIdEmpresa,
-                            id_matriz: lcIdMatriz,
-                            rif: datos.rif ? datos.rif.trim() : "",
-                            razon_social: datos.razon_social ? datos.razon_social.trim() : "",
-                            cupos_licencias: esNueva ? 1 : (dataExiste[0].cupos_licencias || 1),
-                            status: datos.status !== undefined ? datos.status : true
-                        })
+                        body: JSON.stringify(datos) // Grabamos el clon exacto de tu cursor de trabajo local de FoxPro
                     });
 
                     if (!resUpsertEmp.ok) {
                         const txtErrU = await resUpsertEmp.text();
-                        console.error("Error asentando empresa en Supabase:", txtErrU);
+                        console.error("❌ Error de asimiento en Supabase:", txtErrU);
                         return res.status(400).json({ exito: false, error: "Error al asentar la empresa en la base de datos." });
                     }
 
@@ -324,9 +327,10 @@ app.post('/api/pasarela/crud', async (req, res) => {
                     return res.status(200).json({ exito: true });
 
                 } catch (errEmpresa) {
-                    console.error("❌ Fallo crítico en compuerta de guardar_empresa:", errEmpresa.message);
+                    console.error("❌ Fallo crítico en el microservicio guardar_empresa:", errEmpresa.message);
                     return res.status(500).json({ exito: false, error: errEmpresa.message });
                 }
+
 
         //**********************************************************************************************************************************         
         }
