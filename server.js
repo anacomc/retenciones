@@ -239,20 +239,6 @@ app.post('/api/pasarela/crud', async (req, res) => {
             // 👉 CASO 6: GUARDADO AUTÓNOMO DE EMPRESAS CON CONTROL DE CUPOS (POST)
             // =====================================================================
             case 'guardar_empresa':
-                // Validación estricta del sobre y del contenido de la bolsa 'datos'
-                if (!datos || !datos.id_matriz || !id_empresa) {
-                    return res.status(400).json({ exito: false, error: "Estructura de licenciamiento incompleta en el payload." });
-                }
-
-                try {
-                    // Limpiamos los IDs de control que viajan strictly en MAYÚSCULAS desde FoxPro
-                    const lcIdMatriz  = datos.id_matriz.trim();
-                    const lcIdEmpresa = id_empresa.trim();
-
-            // =====================================================================
-            // 👉 CASO 5: GUARDADO DE EMPRESAS CON CONTROL DE LICENCIAS (REPARADO)
-            // =====================================================================
-            case 'guardar_empresa':
                 if (!datos || !datos.id_matriz || !id_empresa) {
                     return res.status(400).json({ exito: false, error: "Estructura de licenciamiento incompleta." });
                 }
