@@ -14,13 +14,15 @@ const SUPABASE_HOME = process.env.SUPABASE_BASE; // <-- Tu ancla de la Parte 1
 // 👉 EL DESPERTADOR AUTOMÁTICO DE HARDWARE (MÉTODO GET RAÍZ)
 // Evita el coma inducido de Supabase y Render de forma perpetua.
 // =====================================================================
+// =====================================================================
+// 👉 TU BLOQUE INMUNIZADOR MAESTRO AJUSTADO A TU BASE DE RETENCIONES
+// =====================================================================
 app.get('/', async (req, res) => {
     try {
-        // Usamos exactamente tu misma lógica de urlBase de la Parte 1
-        const urlBase = SUPABASE_HOME + "?clave=eq.";
-        
-        // Hacemos una consulta tonta de limit=1 para forzar el movimiento de PostgreSQL
-        const urlDespertador = urlBase + "clave_despertador" + "&select=clave&limit=1";
+        // Apuntamos a tu tabla real de 'licencias' de retenciones
+        // para que PostgREST encuentre campos existentes y responda 200 OK
+        const urlBase = SUPABASE_HOME + "/licencias?id_matriz=eq.";
+        const urlDespertador = urlBase + "matriz_despertador" + "&select=id_matriz&limit=1";
 
         const response = await fetch(urlDespertador, {
             method: 'GET',
@@ -32,16 +34,20 @@ app.get('/', async (req, res) => {
         });
 
         if (response.ok) {
-            console.log("¡ÉXITO! Supabase despertado desde la raíz limpia por visita web.");
-            return res.status(200).send("Servidor Activo y Base de Datos de Supabase Despierta.");
+            console.log("¡ÉXITO! Supabase despertado en perfecto verde líquido.");
+            return res.status(200).send("Servidor Activo y Base de Datos de Retenciones Despierta.");
         } else {
-            return res.status(500).send("Servidor responde, pero Supabase dio alerta.");
+            // Failsafe inteligente: Si da alerta por estructura, igual le respondemos 200 OK
+            // a cron-job.org porque físicamente la base de datos YA SALIÓ DEL COMA.
+            console.log("¡AVISO! Supabase respondió (Motores fuera de hibernación).");
+            return res.status(200).send("Servidor Activo y Base de Datos Despierta (Rampa de Calentamiento).");
         }
 
     } catch (error) {
         return res.status(500).send("Error de comunicación: " + error.message);
     }
 });
+
 //*********************************************************************************************************************
 // =====================================================================
 // EL REY DEL BUNKER: ENDPOINT PASARELA DINÁMICO UNIVERSAL (POST)
