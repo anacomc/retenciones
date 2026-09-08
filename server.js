@@ -7,6 +7,7 @@ app.use(express.json({ limit: '10mb' })); // Soplete con capacidad para JSONs ma
 const SUPABASE_BASE = process.env.SUPABASE_BASE;
 const SUPABASE_KEY  = process.env.SUPABASE_KEY;
 const PORT          = process.env.PORT || 3000;
+const SUPABASE_HOME = process.env.SUPABASE_BASE; // <-- Tu ancla de la Parte 1
 
 //*********************************************************************************************************************
 // =====================================================================
@@ -15,14 +16,11 @@ const PORT          = process.env.PORT || 3000;
 // =====================================================================
 app.get('/', async (req, res) => {
     try {
-        console.log("⚡ Ráfaga despertadora recibida en la raíz de la pasarela...");
+        // Usamos exactamente tu misma lógica de urlBase de la Parte 1
+        const urlBase = SUPABASE_HOME + "?clave=eq.";
         
-        // Limpiamos las variables de tu cañería
-        const urlBaseBase = SUPABASE_BASE.trim();
-        
-        // Hacemos una consulta tonta de límite 1 a tu tabla 'licencias' 
-        // o cualquier diccionario para obligar a PostgreSQL a salir de hibernación
-        const urlDespertador = `${urlBaseBase}/licencias?select=id_matriz&limit=1`;
+        // Hacemos una consulta tonta de limit=1 para forzar el movimiento de PostgreSQL
+        const urlDespertador = urlBase + "clave_despertador" + "&select=clave&limit=1";
 
         const response = await fetch(urlDespertador, {
             method: 'GET',
@@ -34,16 +32,14 @@ app.get('/', async (req, res) => {
         });
 
         if (response.ok) {
-            console.log("¡ÉXITO FISCAL! Base de datos de Supabase despertada con éxito.");
-            return res.status(200).send("📡 [Pasarela Retenciones] Servidor Activo y PostgreSQL Despierto.");
+            console.log("¡ÉXITO! Supabase despertado desde la raíz limpia por visita web.");
+            return res.status(200).send("Servidor Activo y Base de Datos de Supabase Despierta.");
         } else {
-            console.warn("⚠️ Servidor Node responde, pero Supabase está tardando en reaccionar.");
-            return res.status(200).send("📡 Servidor en rampa de encendido. Reintentando conexión central.");
+            return res.status(500).send("Servidor responde, pero Supabase dio alerta.");
         }
 
     } catch (error) {
-        console.error("❌ Fallo de comunicación en el despertador:", error.message);
-        return res.status(500).send("Error de comunicación asíncrona: " + error.message);
+        return res.status(500).send("Error de comunicación: " + error.message);
     }
 });
 //*********************************************************************************************************************
