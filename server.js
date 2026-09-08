@@ -8,6 +8,45 @@ const SUPABASE_BASE = process.env.SUPABASE_BASE;
 const SUPABASE_KEY  = process.env.SUPABASE_KEY;
 const PORT          = process.env.PORT || 3000;
 
+//*********************************************************************************************************************
+// =====================================================================
+// 👉 EL DESPERTADOR AUTOMÁTICO DE HARDWARE (MÉTODO GET RAÍZ)
+// Evita el coma inducido de Supabase y Render de forma perpetua.
+// =====================================================================
+app.get('/', async (req, res) => {
+    try {
+        console.log("⚡ Ráfaga despertadora recibida en la raíz de la pasarela...");
+        
+        // Limpiamos las variables de tu cañería
+        const urlBaseBase = SUPABASE_BASE.trim();
+        
+        // Hacemos una consulta tonta de límite 1 a tu tabla 'licencias' 
+        // o cualquier diccionario para obligar a PostgreSQL a salir de hibernación
+        const urlDespertador = `${urlBaseBase}/licencias?select=id_matriz&limit=1`;
+
+        const response = await fetch(urlDespertador, {
+            method: 'GET',
+            headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': "Bearer " + SUPABASE_KEY,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (response.ok) {
+            console.log("¡ÉXITO FISCAL! Base de datos de Supabase despertada con éxito.");
+            return res.status(200).send("📡 [Pasarela Retenciones] Servidor Activo y PostgreSQL Despierto.");
+        } else {
+            console.warn("⚠️ Servidor Node responde, pero Supabase está tardando en reaccionar.");
+            return res.status(200).send("📡 Servidor en rampa de encendido. Reintentando conexión central.");
+        }
+
+    } catch (error) {
+        console.error("❌ Fallo de comunicación en el despertador:", error.message);
+        return res.status(500).send("Error de comunicación asíncrona: " + error.message);
+    }
+});
+//*********************************************************************************************************************
 // =====================================================================
 // EL REY DEL BUNKER: ENDPOINT PASARELA DINÁMICO UNIVERSAL (POST)
 // Gobierna las nuevas tablas contables de forma 100% elástica
